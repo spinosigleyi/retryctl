@@ -1,13 +1,14 @@
-"""Global registry for named CircuitBreaker instances."""
+"""Global registry for named circuit breakers."""
+from __future__ import annotations
 
 from threading import Lock
-from typing import Dict, Optional
+from typing import Dict, Iterator, Optional, Tuple
 
 from retryctl.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
 
 
 class CircuitBreakerRegistry:
-    """Thread-safe registry that manages named circuit breakers."""
+    """Thread-safe registry that maps names to :class:`CircuitBreaker` instances."""
 
     def __init__(self) -> None:
         self._breakers: Dict[str, CircuitBreaker] = {}
@@ -18,39 +19,44 @@ class CircuitBreakerRegistry:
         name: str,
         config: Optional[CircuitBreakerConfig] = None,
     ) -> CircuitBreaker:
-        """Return an existing breaker or create a new one with the given config."""
+        """Return existing breaker or create one with *config*."""
         with self._lock:
             if name not in self._breakers:
-                self._breakers[name] = CircuitBreaker(name, config)
+                self._breakers[name] = CircuitBreaker(
+                    name=name,
+                    config=config or CircuitBreakerConfig(),
+                )
             return self._breakers[name]
 
     def get(self, name: str) -> Optional[CircuitBreaker]:
-        """Return an existing breaker or None."""
+        """Return the breaker for *name*, or ``None`` if not registered."""
         with self._lock:
             return self._breakers.get(name)
 
-    def reset(self, name: str) -> bool:
-        """Remove a breaker from the registry. Returns True if it existed."""
+    def reset(self, name: str) -> None:
+        """Remove the breaker registered under *name*."""
         with self._lock:
-            if name in self._breakers:
-                del self._breakers[name]
-                return True
-            return False
+            self._breakers.pop(name, None)
 
     def reset_all(self) -> None:
-        """Clear all registered breakers."""
+        """Remove every registered breaker."""
         with self._lock:
             self._breakers.clear()
 
-    def list_names(self):
-        """Return a snapshot of all registered breaker names."""
+    def all(self) -> Dict[str, CircuitBreaker]:
+        """Return a shallow copy of the internal breaker mapping."""
         with self._lock:
-            return list(self._breakers.keys())
+            return dict(self._breakers)
 
     def __len__(self) -> int:
         with self._lock:
             return len(self._breakers)
 
+    def __iter__(self) -> Iterator[Tuple[str, CircuitBreaker]]:
+        with self._lock:
+            items = list(self._breakers.items())
+        return iter(items)
+
 
 # Module-level default registry
-default_registry = CircuitBreakerRegistry()
+default_registry: CircuitBreakerRegistry = CircuitBreakerRegistry()
